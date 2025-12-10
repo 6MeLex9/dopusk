@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>УВМ - Web/WASM версия (Pyodide)</title>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        header {
+            background: linear-gradient(90deg, #6a11cb, #2575fc);
+            color: white;
+            padding: 25px;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        .panel {
+            padding: 25px;
+            border-bottom: 2px solid #eee;
+        }
+
+        textarea {
+            width: 100%;
+            height: 200px;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            margin: 15px 0;
+            resize: vertical;
+        }
+
+        .buttons {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(90deg, #4CAF50, #45a049);
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+
+        .output-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            padding: 25px;
+        }
+
+        .output-section {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            border: 1px solid #e9ecef;
+        }
+
+        h3 {
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #6a11cb;
+        }
+
+        pre {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+
+        .status {
+            padding: 15px;
+            background: #e8f4fd;
+            border-left: 4px solid #2196F3;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+
+        .footer {
+            background: #f1f3f5;
+            padding: 20px;
+            text-align: center;
+            color: #666;
+            border-top: 1px solid #dee2e6;
+        }
+
+        @media (max-width: 768px) {
+            .output-panel {
+                grid-template-columns: 1fr;
+            }
+
+            .buttons {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎓 Учебная Виртуальная Машина</h1>
+            <p class="subtitle">Web/WASM версия на Pyodide (Python в браузере)</p>
+        </header>
+
+        <div class="panel">
+            <h2>Программа на ассемблере:</h2>
+            <textarea id="codeEditor" placeholder="Введите программу на ассемблере УВМ...">
+; Демонстрационная программа УВМ
+LOAD 862, 19     ; Загрузить 862 в регистр 19
+LOAD 12345, 60   ; Загрузить 12345 в регистр 60
+STORE 200, 60    ; Записать R60 в память по адресу 200
+LOAD 0x12345678, 20  ; Тестовое значение
+LOAD 4, 21       ; Сдвиг = 4
+STORE 100, 21    ; Сохранить сдвиг в память
+LOAD 100, 22     ; Адрес сдвига в R22
+ROTR 20, 22      ; Циклический сдвиг</textarea>
+
+            <div class="status" id="status">
+                ⏳ Инициализация Pyodide... Загрузка Python среды в браузере.
+            </div>
+
+            <div class="buttons">
+                <button id="runBtn" onclick="runProgram()" disabled>
+                    ▶️ Ассемблировать и выполнить
+                </button>
+                <button onclick="loadExample()">
+                    📋 Пример из спецификации
+                </button>
+                <button onclick="clearAll()">
+                    🗑️ Очистить
+                </button>
+            </div>
+        </div>
+
+        <div class="output-panel">
+            <div class="output-section">
+                <h3>Регистры (ненулевые):</h3>
+                <pre id="registersOutput">Запустите программу для просмотра результатов...</pre>
+            </div>
+
+            <div class="output-section">
+                <h3>Память (ненулевые):</h3>
+                <pre id="memoryOutput">Запустите программу для просмотра результатов...</pre>
+            </div>
+
+            <div class="output-section">
+                <h3>Байткод и логи:</h3>
+                <pre id="logOutput">Ожидание запуска...</pre>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>УВМ Web/WASM версия | Pyodide v0.24.1 | Python 3.10 в браузере</p>
+            <p>Все вычисления выполняются локально в вашем браузере через WebAssembly</p>
+        </div>
+    </div>
+
+    <script>
+        // Глобальная переменная для Pyodide
+        let pyodide;
+        let pythonCodeLoaded = false;
+
+        // Инициализация Pyodide
+        async function initPyodide() {
+            try {
+                document.getElementById('status').innerHTML =
+                    '⏳ Загрузка Pyodide (Python в WASM)... Это может занять несколько секунд.';
+
+                // Загружаем Pyodide
+                pyodide = await loadPyodide();
+
+                // Загружаем необходимые пакеты
+                document.getElementById('status').innerHTML =
+                    '⏳ Установка зависимостей Python...';
+
+                await pyodide.loadPackage(["micropip"]);
+
+                // Загружаем наш Python код
+                document.getElementById('status').innerHTML =
+                    '⏳ Загрузка кода УВМ...';
+
+                await loadPythonCode();
+
+                document.getElementById('status').innerHTML =
+                    '✅ Pyodide загружен! Python 3.10 готов к работе в браузере.';
+                document.getElementById('runBtn').disabled = false;
+
+            } catch (error) {
+                document.getElementById('status').innerHTML =
+                    `❌ Ошибка загрузки Pyodide: ${error.message}`;
+                console.error(error);
+            }
+        }
+
+        // Загрузка Python кода УВМ
+        async function loadPythonCode() {
+            const pythonCode = `
+import json
+
+class UVMWeb:
+    def __init__(self):
+        self.registers = [0] * 64
+        self.memory = [0] * 2048
+
+    def parse_line(self, line):
+        """Парсинг строки ассемблера"""
+        line = line.strip()
+        if not line or line.startswith(';'):
+            return None
+
+        parts = line.split()
+        mnemonic = parts[0].upper()
+
+        commands = {'LOAD': 84, 'READ': 223, 'STORE': 9, 'ROTR': 213}
+
+        if mnemonic not in commands:
+            raise ValueError(f"Неизвестная команда: {mnemonic}")
+
+        args = []
+        for part in parts[1:]:
+            part = part.replace(',', '')
+            if part.startswith('0x'):
+                args.append(int(part, 16))
+            else:
+                args.append(int(part))
+
+        if len(args) == 2:
+            b, c = args
+        else:
+            b, c = args[0], 0
+
+        return mnemonic, commands[mnemonic], b, c
+
+    def execute_command(self, a, b, c):
+        """Выполнение одной команды"""
+        if a == 84:    # LOAD
+            if 0 <= c < 64:
+                self.registers[c] = b
+        elif a == 223: # READ
+            if 0 <= c < 64:
+                addr = self.registers[c]
+                if 0 <= addr < len(self.memory):
+                    if 0 <= b < 64:
+                        self.registers[b] = self.memory[addr]
+        elif a == 9:   # STORE
+            if 0 <= c < 64:
+                value = self.registers[c]
+                if 0 <= b < len(self.memory):
+                    self.memory[b] = value
+        elif a == 213: # ROTR
+            if 0 <= b < 64 and 0 <= c < 64:
+                addr = self.registers[c]
+                if 0 <= addr < len(self.memory):
+                    shift = self.memory[addr] & 0x1F
+                    value = self.registers[b]
+                    if shift > 0:
+                        mask = 0xFFFFFFFF
+                        result = ((value >> shift) | (value << (32 - shift))) & mask
+                    else:
+                        result = value
+                    self.registers[b] = result
+
+    def run(self, program_text):
+        """Выполнение программы"""
+        # Сброс состояния
+        self.registers = [0] * 64
+        self.memory = [0] * 2048
+
+        logs = []
+        lines = program_text.strip().split('\\n')
+
+        for line_num, line in enumerate(lines, 1):
+            try:
+                parsed = self.parse_line(line)
+                if parsed is None:
+                    continue
+
+                mnemonic, a, b, c = parsed
+                self.execute_command(a, b, c)
+
+                logs.append(f"Строка {line_num}: {mnemonic} B={b}, C={c}")
+
+            except Exception as e:
+                logs.append(f"Ошибка в строке {line_num}: {str(e)}")
+
+        # Формируем результаты
+        registers_result = {}
+        for i, val in enumerate(self.registers):
+            if val != 0:
+                registers_result[f'R{i:02d}'] = val
+
+        memory_result = {}
+        for i in range(min(200, len(self.memory))):
+            if self.memory[i] != 0:
+                memory_result[f'0x{i:04X}'] = self.memory[i]
+
+        return {
+            'registers': registers_result,
+            'memory': memory_result,
+            'logs': logs,
+            'success': True
+        }
+
+# Создаем глобальный экземпляр УВМ
+uvm_web = UVMWeb()
+`;
+
+            await pyodide.runPythonAsync(pythonCode);
+            pythonCodeLoaded = true;
+        }
+
+        // Запуск программы
+        async function runProgram() {
+            if (!pythonCodeLoaded) {
+                alert('Pyodide еще не загружен. Подождите...');
+                return;
+            }
+
+            const code = document.getElementById('codeEditor').value;
+
+            document.getElementById('status').innerHTML =
+                '⏳ Выполнение программы в браузере (WebAssembly)...';
+
+            try {
+                // Вызываем Python функцию
+                const result = await pyodide.runPythonAsync(`
+result = uvm_web.run("""${code.replace(/"/g, '\\"')}""")
+import json
+json.dumps(result)
+`);
+
+                const data = JSON.parse(result);
+
+                // Обновляем интерфейс
+                updateOutput(data);
+
+                document.getElementById('status').innerHTML =
+                    `✅ Программа выполнена успешно! Обработано ${data.logs.length} команд.`;
+
+            } catch (error) {
+                document.getElementById('status').innerHTML =
+                    `❌ Ошибка выполнения: ${error.message}`;
+
+                document.getElementById('logOutput').textContent =
+                    `Ошибка: ${error.message}`;
+            }
+        }
+
+        // Обновление вывода
+        function updateOutput(data) {
+            // Регистры
+            let registersText = '';
+            if (Object.keys(data.registers).length > 0) {
+                for (const [reg, val] of Object.entries(data.registers)) {
+                    registersText += `${reg}: ${val} (0x${val.toString(16).toUpperCase()})\\n`;
+                }
+            } else {
+                registersText = 'Все регистры нулевые';
+            }
+            document.getElementById('registersOutput').textContent = registersText;
+
+            // Память
+            let memoryText = '';
+            if (Object.keys(data.memory).length > 0) {
+                for (const [addr, val] of Object.entries(data.memory)) {
+                    memoryText += `${addr}: ${val} (0x${val.toString(16).toUpperCase()})\\n`;
+                }
+            } else {
+                memoryText = 'Нет ненулевых значений в памяти';
+            }
+            document.getElementById('memoryOutput').textContent = memoryText;
+
+            // Логи
+            document.getElementById('logOutput').textContent = data.logs.join('\\n');
+        }
+
+        // Загрузка примера
+        function loadExample() {
+            const example = `; Тесты из спецификации УВМ
+LOAD 862, 19     ; Тест 1: A=84, B=862, C=19
+LOAD 777, 11     ; Подготовка для READ
+LOAD 999, 0
+STORE 777, 0
+READ 43, 11      ; Тест 2: A=223, B=43, C=11
+LOAD 12345, 60
+STORE 955, 60    ; Тест 3: A=9, B=955, C=60
+LOAD 0x00ABCDEF, 36
+LOAD 8, 0
+STORE 100, 0
+LOAD 100, 48
+ROTR 36, 48      ; Тест 4: A=213, B=36, C=48`;
+
+            document.getElementById('codeEditor').value = example;
+        }
+
+        // Очистка
+        function clearAll() {
+            document.getElementById('codeEditor').value = '';
+            document.getElementById('registersOutput').textContent =
+                'Запустите программу для просмотра результатов...';
+            document.getElementById('memoryOutput').textContent =
+                'Запустите программу для просмотра результатов...';
+            document.getElementById('logOutput').textContent = 'Ожидание запуска...';
+        }
+
+        // Инициализация при загрузке страницы
+        window.addEventListener('load', () => {
+            initPyodide();
+        });
+    </script>
+</body>
+</html>
